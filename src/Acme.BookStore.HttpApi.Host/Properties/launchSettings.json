@@ -3,7 +3,7 @@
     "windowsAuthentication": false,
     "anonymousAuthentication": true,
     "iisExpress": {
-      "applicationUrl": "https://tenant1.api.mybookstore.com:44399",
+      "applicationUrl": "https://api.mybookstore.com:44399",
       "sslPort": 44399
     }
   },
@@ -18,7 +18,7 @@
     "Acme.BookStore.HttpApi.Host": {
       "commandName": "Project",
       "launchBrowser": true,
-      "applicationUrl": "https://tenant1.api.mybookstore.com:44399",
+      "applicationUrl": "https://api.mybookstore.com:44399",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

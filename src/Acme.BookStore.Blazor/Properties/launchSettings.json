@@ -3,7 +3,7 @@
     "windowsAuthentication": false,
     "anonymousAuthentication": true,
     "iisExpress": {
-      "applicationUrl": "https://tenant1.mybookstore.com:44307",
+      "applicationUrl": "https://mybookstore.com:44307",
       "sslPort": 44307
     }
   },
@@ -20,7 +20,7 @@
       "commandName": "Project",
       "launchBrowser": true,
       "inspectUri": "{wsProtocol}://{url.hostname}:{url.port}/_framework/debug/ws-proxy?browser={browserInspectUri}",
-      "applicationUrl": "https://tenant1.mybookstore.com:44307",
+      "applicationUrl": "https://mybookstore.com:44307",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
