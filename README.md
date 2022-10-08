@@ -1,10 +1,15 @@
 # Abp Blazor Multi-Tenant Subdomain Resolution
+
+A common requirement for software-as-a-service applications is to be able to provide a specific URL to each tenant that will take them directly to their portion of the application, often together with customised branding or data for their company.
+
 Here we will describe a method of implementing per-tenant subdomains for Blazor UI using the ABP framework.
 
 For this case we will consider that we have a non-tiered solution (no separate auth server).
 If you have a tiered solution, you will need to repeat steps 2 and 3 as appropriate for that module.
 
 We will also consider that we are going to use mybookstore.com as a base domain.
+
+See the completed solution for this example at [this github repository](https://github.com/gdunit/AbpBlazorMultiTenantSubdomain "Example Repository").
 
 ### Step 1 
 DbMigrator - appsettings.json
