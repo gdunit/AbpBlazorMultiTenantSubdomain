@@ -8,6 +8,7 @@ using IdentityModel;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpenIddict.Abstractions;
 using Volo.Abp.AspNetCore.Components.Web.BasicTheme.Themes.Basic;
 using Volo.Abp.AspNetCore.Components.Web.Theming.Routing;
 using Volo.Abp.AspNetCore.Components.WebAssembly.BasicTheme;
@@ -74,9 +75,11 @@ namespace Acme.BookStore.Blazor
             builder.Services.AddOidcAuthentication(options =>
             {
                 builder.Configuration.Bind("AuthServer", options.ProviderOptions);
-                options.UserOptions.RoleClaim = JwtClaimTypes.Role;
+                options.UserOptions.NameClaim = OpenIddictConstants.Claims.Name;
+                options.UserOptions.RoleClaim = OpenIddictConstants.Claims.Role;
+                options.ProviderOptions.DefaultScopes.Add("roles");  
+                
                 options.ProviderOptions.DefaultScopes.Add("BookStore");
-                options.ProviderOptions.DefaultScopes.Add("role");
                 options.ProviderOptions.DefaultScopes.Add("email");
                 options.ProviderOptions.DefaultScopes.Add("phone");
                 // Override the domain from the config with the actual tenant specific domain

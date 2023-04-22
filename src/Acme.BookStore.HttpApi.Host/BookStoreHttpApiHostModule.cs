@@ -10,12 +10,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Acme.BookStore.EntityFrameworkCore;
 using Acme.BookStore.MultiTenancy;
-using IdentityServer4.Configuration;
+using Microsoft.AspNetCore.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Identity;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Basic;
 using Microsoft.OpenApi.Models;
+using OpenIddict.Server;
+using OpenIddict.Validation.AspNetCore;
+using Owl.TokenWildcardIssuerValidator;
 using Volo.Abp;
 using Volo.Abp.Account.Web;
-using Volo.Abp.AspNetCore.Authentication.JwtBearer;
 using Volo.Abp.AspNetCore.MultiTenancy;
 using Volo.Abp.AspNetCore.Mvc;
 using Volo.Abp.AspNetCore.Mvc.UI.Bundling;
@@ -23,10 +26,11 @@ using Volo.Abp.AspNetCore.Mvc.UI.Theme.Basic.Bundling;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared;
 using Volo.Abp.AspNetCore.Serilog;
 using Volo.Abp.Autofac;
-using Volo.Abp.IdentityServer;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
+using Volo.Abp.OpenIddict;
+using Volo.Abp.OpenIddict.WildcardDomains;
 using Volo.Abp.Swashbuckle;
 using Volo.Abp.UI.Navigation.Urls;
 using Volo.Abp.VirtualFileSystem;
@@ -40,8 +44,7 @@ namespace Acme.BookStore
         typeof(BookStoreApplicationModule),
         typeof(BookStoreEntityFrameworkCoreModule),
         typeof(AbpAspNetCoreMvcUiBasicThemeModule),
-        typeof(AbpAspNetCoreAuthenticationJwtBearerModule),
-        typeof(AbpAccountWebIdentityServerModule),
+        typeof(AbpAccountWebOpenIddictModule),
         typeof(AbpAspNetCoreSerilogModule),
         typeof(AbpSwashbuckleModule)
     )]
@@ -49,30 +52,103 @@ namespace Acme.BookStore
     {
         private const string DefaultCorsPolicyName = "Default";
 
-        public override void ConfigureServices(ServiceConfigurationContext context)
+        public override void PreConfigureServices(ServiceConfigurationContext context)
         {
             var configuration = context.Services.GetConfiguration();
             var hostingEnvironment = context.Services.GetHostingEnvironment();
             
-            /*Start Subdomain Management Code*/
-            context.Services.AddAbpStrictRedirectUriValidator();
-            context.Services.AddAbpClientConfigurationValidator();
-            context.Services.AddAbpWildcardSubdomainCorsPolicyService();
-            Configure<AbpTenantResolveOptions>(options =>
+            PreConfigure<AbpOpenIddictAspNetCoreOptions>(options =>
             {
-                options.AddDomainTenantResolver(configuration["App:SelfUrl"]);
+                if (hostingEnvironment.IsProduction() || hostingEnvironment.IsStaging())
+                {
+                    //https://documentation.openiddict.com/configuration/encryption-and-signing-credentials.html
+                    options.AddDevelopmentEncryptionAndSigningCertificate = false;
+                }
+                else
+                {
+                    options.AddDevelopmentEncryptionAndSigningCertificate = true;
+                }
+            });
+            
+            // Needed for production only
+            // PreConfigure<OpenIddictServerBuilder>(options =>
+            // {
+            //     if (hostingEnvironment.IsProduction() || hostingEnvironment.IsStaging())
+            //     {
+            //         options.AddEncryptionCertificate(LoadCertificate(
+            //             configuration["AuthServer:EncryptionCertificateThumbprint"]));
+            //         options.AddSigningCertificate(LoadCertificate(
+            //             configuration["AuthServer:SigningCertificateThumbprint"]));
+            //     }
+            // });
+            
+            PreConfigure<OpenIddictBuilder>(builder =>
+            {
+                builder.AddValidation(options =>
+                {
+                    options.AddAudiences("BookStore");
+                    options.UseLocalServer();
+                    options.UseAspNetCore();
+                });
+            });
+            
+            PreConfigure<IdentityBuilder>(identityBuilder =>
+            {
+                identityBuilder.AddSignInManager<BookstoreSigninManager>();
             });
 
-            Configure<IdentityServerOptions>(options =>
+            // var frontEndUrlWithSubdomainPlaceholder = configuration["App:FrontEndUrl"];
+            //
+            // PreConfigure<AbpOpenIddictWildcardDomainOptions>(options =>
+            // {
+            //     options.EnableWildcardDomainSupport = true;
+            //     options.WildcardDomainsFormat.Add($"{frontEndUrlWithSubdomainPlaceholder}/signin-oidc");
+            //     options.WildcardDomainsFormat.Add($"{frontEndUrlWithSubdomainPlaceholder}/signout-callback-oidc");
+            // });
+        }
+
+        // For linux azure app service, path differs for windows
+        // private X509Certificate2 LoadCertificate(string thumbprint)
+        // {
+        //     var bytes = File.ReadAllBytes($"/var/ssl/private/{thumbprint}.p12");
+        //     return new X509Certificate2(bytes);
+        // }
+        
+        public override void ConfigureServices(ServiceConfigurationContext context)
+        {
+            var configuration = context.Services.GetConfiguration();
+            ConfigureAuthentication(context);
+            
+            /*Start Subdomain Management Code*/
+            var selfDomainWithSubdomainPlaceholder = configuration["App:SelfUrlWithSubdomain"];
+            var selfDomain = configuration["App:SelfUrl"];
+            Configure<AbpTenantResolveOptions>(options =>
             {
-                options.IssuerUri = configuration["App:SelfUrlWithoutTenant"];
+                options.AddDomainTenantResolver(selfDomainWithSubdomainPlaceholder);
+            });
+
+            var frontEndUrlWithSubdomainPlaceholder = configuration["App:FrontEndUrl"];
+            Configure<AbpOpenIddictWildcardDomainOptions>(options =>
+            {
+                options.EnableWildcardDomainSupport = true;
+                options.WildcardDomainsFormat.Add($"{frontEndUrlWithSubdomainPlaceholder}/signin-oidc");
+                options.WildcardDomainsFormat.Add($"{frontEndUrlWithSubdomainPlaceholder}/signout-callback-oidc");
+            });
+            
+            Configure<OpenIddictServerOptions>(options =>
+            {
+                options.TokenValidationParameters.IssuerValidator = TokenWildcardIssuerValidator.IssuerValidator;
+                options.TokenValidationParameters.ValidIssuers = new[]
+                {
+                    selfDomain.EnsureEndsWith('/'),
+                    selfDomainWithSubdomainPlaceholder.EnsureEndsWith('/')
+                };
             });
             /*END Subdomain Management Code*/
             
             ConfigureBundles();
             ConfigureUrls(configuration);
             ConfigureConventionalControllers();
-            ConfigureAuthentication(context, configuration);
             ConfigureLocalization();
             ConfigureVirtualFileSystem(context);
             ConfigureCors(context, configuration);
@@ -130,23 +206,28 @@ namespace Acme.BookStore
             });
         }
 
-        private void ConfigureAuthentication(ServiceConfigurationContext context, IConfiguration configuration)
+        private void ConfigureAuthentication(ServiceConfigurationContext context)
         {
-            context.Services.AddAuthentication()
-                .AddJwtBearer(options =>
-                {
-                    options.Authority = configuration["AuthServer:Authority"];
-                    options.RequireHttpsMetadata = Convert.ToBoolean(configuration["AuthServer:RequireHttpsMetadata"]);
-                    options.Audience = "BookStore";
-                    options.TokenValidationParameters.ValidateIssuer = false;
-                    options.TokenValidationParameters.ValidateAudience = false;
-                    options.BackchannelHttpHandler = new HttpClientHandler
-                    {
-                        ServerCertificateCustomValidationCallback =
-                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                    };
-                });
+            context.Services.ForwardIdentityAuthenticationForBearer(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
         }
+        
+        // private void ConfigureAuthentication(ServiceConfigurationContext context, IConfiguration configuration)
+        // {
+        //     context.Services.AddAuthentication()
+        //         .AddJwtBearer(options =>
+        //         {
+        //             options.Authority = configuration["AuthServer:Authority"];
+        //             options.RequireHttpsMetadata = Convert.ToBoolean(configuration["AuthServer:RequireHttpsMetadata"]);
+        //             options.Audience = "BookStore";
+        //             options.TokenValidationParameters.ValidateIssuer = false;
+        //             options.TokenValidationParameters.ValidateAudience = false;
+        //             options.BackchannelHttpHandler = new HttpClientHandler
+        //             {
+        //                 ServerCertificateCustomValidationCallback =
+        //                     HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        //             };
+        //         });
+        // }
 
         private static void ConfigureSwaggerServices(ServiceConfigurationContext context)
         {
@@ -220,14 +301,13 @@ namespace Acme.BookStore
             app.UseRouting();
             app.UseCors(DefaultCorsPolicyName);
             app.UseAuthentication();
-            app.UseJwtTokenMiddleware();
+            app.UseAbpOpenIddictValidation();
 
             if (MultiTenancyConsts.IsEnabled)
             {
                 app.UseMultiTenancy();
             }
 
-            app.UseIdentityServer();
             app.UseAuthorization();
 
             app.UseSwagger();
